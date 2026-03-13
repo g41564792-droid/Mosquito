@@ -27,7 +27,7 @@ async def main():
         
     except KeyboardInterrupt:
         print("\n🛑 Бот остановлен вручную!")
-    except Exception as e:
+    except (Exception, RuntimeError) as e:
         print(f"❌ Критическая ошибка: {type(e).__name__}: {e}")
     finally:
         await bot.session.close()
