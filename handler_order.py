@@ -47,9 +47,17 @@ async def set_install_type(call: CallbackQuery, state: FSMContext):
     from keyboards import proemny_sub_kb
     
     if call.data:
-        install_type = call.data.split("_")[1]  # Проёмный, Дверной, Роллетный
+        install_type_code = call.data.split("_")[1]  # Proemny, Dvernoy, Rolletny
     else:
-        install_type = ""
+        install_type_code = ""
+    
+    # Преобразуем код типа в русское название
+    type_map = {
+        "Proemny": "Проёмный",
+        "Dvernoy": "Дверной",
+        "Rolletny": "Роллетный"
+    }
+    install_type = type_map.get(install_type_code, install_type_code)
     
     # Обновляем данные состояния
     await state.update_data({"install_type": install_type})
@@ -82,19 +90,23 @@ async def set_install_type(call: CallbackQuery, state: FSMContext):
 @router.callback_query(F.data.startswith("sub_"))
 async def set_sub_install(call: CallbackQuery, state: FSMContext):
     sub_map = {
-        "sub_Naruzhny": "Наружный",
-        "sub_Vnutrenniy": "Внутренний",
-        "sub_Vstraivaemy": "Встраиваемый"
+        "Naruzhny": "Наружный",
+        "Vnutrenniy": "Внутренний",
+        "Vstraivaemy": "Встраиваемый"
     }
     if call.data:
-        sub_type = sub_map.get(call.data.split("_")[1], call.data)
+        sub_type = sub_map.get(call.data.split("_")[1], "Неизвестный")
     else:
         sub_type = "Неизвестный"
     
     await state.update_data({"sub_install": sub_type})
-    if call.message:
-        await call.message.answer(f"✅ Подтип '{sub_type}' выбран.\n\nВведите ширину изделия (мм):", parse_mode=ParseMode.MARKDOWN)
     await state.set_state(OrderForm.size_w)
+    if call.message:
+        try:
+            await call.message.answer(f"✅ Подтип '{sub_type}' выбран.\n\nВведите ширину изделия (мм):", parse_mode=ParseMode.MARKDOWN)
+        except Exception:
+            # Если не удалось отправить сообщение, просто продолжаем
+            pass
     await call.answer()
 
 @router.message(OrderForm.size_w)
@@ -109,8 +121,12 @@ async def check_width(msg: Message, state: FSMContext):
             await msg.answer("Ширина должна быть от 150 до 3000 мм.")
             return
         await state.update_data({"size_w": width})
-        await msg.answer("Введите высоту изделия (мм):", parse_mode=ParseMode.MARKDOWN)
         await state.set_state(OrderForm.size_h)
+        try:
+            await msg.answer("Введите высоту изделия (мм):", parse_mode=ParseMode.MARKDOWN)
+        except Exception:
+            # Если не удалось отправить сообщение, просто продолжаем
+            pass
     except ValueError:
         await msg.answer("Ошибка: вводите числа.")
 
