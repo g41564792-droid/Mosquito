@@ -1,4 +1,5 @@
 import os
+from datetime import datetime
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
 from config import GOOGLE_SERVICE_ACCOUNT_KEY_PATH, GOOGLE_TABLES_ID, GOOGLE_SCOPES
@@ -48,26 +49,54 @@ def save_order_to_sheet(order_id, data):
     
     # Подготавливаем строки для каждого размера
     rows = []
+    current_date = datetime.now().strftime("%d.%m.%Y")
     for size in sizes:
+        # Объединяем тип установки и подтип через "_"
+        install_type = data.get('install_type', '')
+        sub_install = data.get('sub_install', '')
+        # Убираем возможные невидимые символы
+        if install_type:
+            install_type = install_type.strip()
+        if sub_install:
+            sub_install = sub_install.strip()
+        if sub_install:
+            install_type_full = f"{install_type}_{sub_install}"
+        else:
+            install_type_full = install_type
+        
+        # Функция для безопасного получения и очистки строки
+        def clean(val):
+            if val is None:
+                return ''
+            if isinstance(val, str):
+                return val.strip()
+            return str(val).strip()
+        
         row = [
             order_id,                                  # A: ID заказа
-            data.get('install_type'),                  # B: Тип установки
-            data.get('sub_install', ''),               # C: Подтип
-            f"{size['width']}x{size['height']}",      # D: Размер
-            size.get('qty', 1),                        # E: Количество
-            data.get('color', 'Не выбран'),            # F: Цвет
-            data.get('fabric', 'Стандартное'),         # G: Полотно
-            data.get('impost', 'no'),                  # H: Импост
-            data.get('notes', ''),                     # I: Примечание
-            "Новый заказ",                             # J: Статус
-            data.get('client_name', '')                # K: Клиент
+            current_date,                              # B: Дата заказа
+            clean(data.get('client_name')),            # C: Клиент (ID Telegram)
+            '',                                        # D: Телефон (пусто)
+            install_type_full,                         # E: Тип установки (с подтипом)
+            size['width'],                             # F: Ширина
+            size['height'],                            # G: Высота
+            size.get('qty', 1),                        # H: Кол-во
+            clean(data.get('impost', 'no')),           # I: Импост
+            clean(data.get('color', 'Не выбран')),     # J: Цвет
+            clean(data.get('mount')),                  # K: Крепление
+            clean(data.get('fabric', 'Стандартное')),  # L: Полотно
+            clean(data.get('notes')),                  # M: Примечание
+            '',                                        # N: Цена поз. (пусто)
+            '',                                        # O: Сумма (пусто)
+            "Новый заказ",                             # P: Статус
+            clean(data.get('finish_date'))             # Q: Желаемая дата
         ]
         rows.append(row)
     
     try:
         result = sheet.values().append(
             spreadsheetId=GOOGLE_TABLES_ID,
-            range='Zakaz!A:K',                      # Диапазон столбцов A-K
+            range='Zakaz!A:Q',                      # Диапазон столбцов A-Q (17 столбцов)
             valueInputOption='RAW',
             insertDataOption='INSERT_ROWS',
             body={'values': rows}
