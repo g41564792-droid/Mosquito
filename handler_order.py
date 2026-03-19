@@ -19,6 +19,7 @@ class OrderForm(StatesGroup):
     size_w = State()
     size_h = State()
     qty = State()
+    size_all = State()  # новое состояние для ввода всех размеров и количества
     color = State()
     color_description = State()
     mount = State()
@@ -77,10 +78,12 @@ async def set_install_type(call: CallbackQuery, state: FSMContext):
         # Для остальных типов — сразу просим размеры
         if call.message:
             await call.message.answer(
-                "📏 Введите ширину изделия (мм)\n*Минимум 150 мм, максимум 3000 мм*",
+                "📏 Введите размеры: ширина высота [кол-во]\n"
+                "Например: 800 1200 2\n"
+                "*Минимум 150 мм, максимум 3000 мм. Количество по умолчанию 1, максимум 30.*",
                 parse_mode=ParseMode.MARKDOWN
             )
-        await state.set_state(OrderForm.size_w)
+        await state.set_state(OrderForm.size_all)
     
     # Обязательно подтверждает нажатие кнопки пользователю
     if install_type != "Проёмный":
@@ -101,110 +104,94 @@ async def set_sub_install(call: CallbackQuery, state: FSMContext):
         sub_type = "Неизвестный"
     
     await state.update_data({"sub_install": sub_type})
-    await state.set_state(OrderForm.size_w)
+    await state.set_state(OrderForm.size_all)
     if call.message:
         try:
-            await call.message.answer(f"✅ Подтип '{sub_type}' выбран.\n\nВведите ширину изделия (мм):", parse_mode=ParseMode.MARKDOWN)
+            await call.message.answer(
+                f"✅ Подтип '{sub_type}' выбран.\n\n"
+                "📏 Введите размеры: ширина высота [кол-во]\n"
+                "Например: 800 1200 2\n"
+                "*Минимум 150 мм, максимум 3000 мм. Количество по умолчанию 1, максимум 30.*",
+                parse_mode=ParseMode.MARKDOWN
+            )
         except Exception as e:
             # Если не удалось отправить сообщение, просто продолжаем
             print(f"Ошибка при отправке сообщения: {e}")
             pass
     await call.answer()
 
-@router.message(OrderForm.size_w)
-async def check_width(msg: Message, state: FSMContext):
+@router.message(OrderForm.size_all)
+async def process_size_all(msg: Message, state: FSMContext):
+    """
+    Обработчик ввода размеров и количества в одном сообщении.
+    Формат: ширина высота [кол-во]
+    Пример: 800 1200 2
+    """
     try:
-        if msg.text:
-            width = int(msg.text)
-        else:
-            await msg.answer("Пожалуйста, введите числовое значение для ширины.")
+        if not msg.text:
+            await msg.answer("Пожалуйста, введите размеры.")
             return
+        
+        parts = msg.text.strip().split()
+        if len(parts) not in (2, 3):
+            await msg.answer(
+                "Неверный формат. Введите ширина высота [кол-во]\n"
+                "Например: 800 1200 2"
+            )
+            return
+        
+        width = int(parts[0])
+        height = int(parts[1])
+        qty = int(parts[2]) if len(parts) == 3 else 1
+        
+        # Проверка диапазонов
         if not (150 <= width <= 3000):
             await msg.answer("Ширина должна быть от 150 до 3000 мм.")
             return
-        await state.update_data({"size_w": width})
-        await state.set_state(OrderForm.size_h)
-        try:
-            await msg.answer("Введите высоту изделия (мм):", parse_mode=ParseMode.MARKDOWN)
-        except Exception as e:
-            # Если не удалось отправить сообщение, просто продолжаем
-            logging.error(f"Ошибка при отправке сообщения: {e}")
-            pass
-    except ValueError:
-        await msg.answer("Ошибка: вводите числа.")
-
-@router.message(OrderForm.size_h)
-async def check_height(msg: Message, state: FSMContext):
-    try:
-        if msg.text:
-            height = int(msg.text)
-        else:
-            await msg.answer("Пожалуйста, введите числовое значение для высоты.")
-            return
-        data = await state.get_data()
-        
-        # Проверяем наличие width в данных
-        if "size_w" not in data:
-            await msg.answer("Ошибка: ширина изделия не найдена. Начните оформление заказа заново.")
-            return
-            
-        width = data["size_w"]
-        
         if not (150 <= height <= 3000):
             await msg.answer("Высота должна быть от 150 до 3000 мм.")
             return
+        if qty > 30:
+            await msg.answer("Максимум 30 изделий. Для большего количества свяжитесь с менеджером.")
+            return
+        if qty < 1:
+            await msg.answer("Количество должно быть положительным.")
+            return
         
-        await state.update_data({"size_h": height})
+        # Сохраняем данные
+        await state.update_data({
+            "size_w": width,
+            "size_h": height,
+            "qty": qty
+        })
         
+        # Отладочное сообщение
+        await msg.answer(f"✅ Данные сохранены: ширина {width} мм, высота {height} мм, количество {qty}.")
+        
+        # Проверка на импост
         needs_impost = (width > 1200) or (height > 1200)
-
         if needs_impost:
             from keyboards import impost_kb
             await msg.answer("⚠️ Размер больше 1200 мм. Хотите поставить импост?", reply_markup=impost_kb())
             await state.set_state(OrderForm.impost)
         else:
-            await msg.answer("Введите количество изделий (максимум 30). При необходимости большего количества свяжитесь с менеджером.")
-            await state.set_state(OrderForm.qty)
+            # Переходим к выбору цвета
+            data = await state.get_data()
+            install_type = data.get("install_type")
+            await msg.answer(f"🔍 Отладка: install_type = {install_type}")
+            if not install_type:
+                await msg.answer("Ошибка: тип установки не найден. Начните оформление заказа заново.")
+                return
+            from keyboards import color_kb
+            await msg.answer("Выберите цвет рамы:", reply_markup=color_kb(install_type))
+            await state.set_state(OrderForm.color)
             
     except ValueError:
         await msg.answer("Ошибка: вводите числа.")
-        return
     except Exception as e:
-        await msg.answer(f"Произошла ошибка: {str(e)}. Начните оформление заказа заново.")
-        return
+        logging.error(f"Ошибка в process_size_all: {e}", exc_info=True)
+        await msg.answer("Произошла ошибка. Начните оформление заказа заново.")
 
-@router.message(OrderForm.qty)
-async def confirm_qty(msg: Message, state: FSMContext):
-    try:
-        if msg.text:
-            qty = int(msg.text)
-        else:
-            await msg.answer("Пожалуйста, введите числовое значение для количества.")
-            return
-        if qty > 30:
-            await msg.answer("Максимум 30 изделий. Для большего количества свяжитесь с менеджером.")
-            return
-            
-        await state.update_data({"qty": qty})
-        data = await state.get_data()
-        
-        # Проверяем наличие install_type в данных
-        if "install_type" not in data:
-            await msg.answer("Ошибка: тип установки не найден. Начните оформление заказа заново.")
-            return
-            
-        install_type = data["install_type"]
-
-        from keyboards import color_kb
-        await msg.answer("Выберите цвет рамы:", reply_markup=color_kb(install_type))
-        await state.set_state(OrderForm.color)
-        
-    except ValueError:
-        await msg.answer("Введите числовое значение.")
-        return
-    except Exception as e:
-        await msg.answer(f"Произошла ошибка: {str(e)}. Начните оформление заказа заново.")
-        return
 
 @router.callback_query(F.data.startswith("color_"))
 async def select_color(call: CallbackQuery, state: FSMContext):
@@ -473,6 +460,12 @@ async def send_confirmation(call: CallbackQuery, state: FSMContext):
     from datetime import datetime
     data = await state.get_data()
     
+    # Отладочная информация о данных
+    debug_info = f"Ключи данных: {list(data.keys())}\n"
+    debug_info += f"size_w: {data.get('size_w')}, size_h: {data.get('size_h')}, qty: {data.get('qty')}"
+    if call.message:
+        await call.message.answer(f"🔍 Отладка сохранения: {debug_info}")
+    
     # Генерация order_id на основе временной метки
     order_id = f"ORD-{int(datetime.now().timestamp())}"
     
@@ -481,9 +474,9 @@ async def send_confirmation(call: CallbackQuery, state: FSMContext):
     try:
         await asyncio.to_thread(save_order_to_sheet, order_id, data)
     except Exception as e:
-        logging.error(f"Ошибка при сохранении заказа: {e}")
+        logging.error(f"Ошибка при сохранении заказа: {e}", exc_info=True)
         if call.message:
-            await call.message.answer("❌ Произошла ошибка при сохранении заказа. Попробуйте позже.")
+            await call.message.answer(f"❌ Ошибка при сохранении заказа: {str(e)[:200]}")
         return
     
     if call.message:
