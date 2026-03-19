@@ -51,7 +51,7 @@ def save_order_to_sheet(order_id, data):
     try:
         result = sheet.values().append(
             spreadsheetId=GOOGLE_TABLES_ID,
-            range='Лист1',                      # Или другой лист, например 'Заказы'
+            range='Zakaz',                      # Или другой лист, например 'Заказы'
             valueInputOption='RAW',
             body={'values': values}
         ).execute()
