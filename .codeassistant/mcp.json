@@ -1,0 +1,16 @@
+{
+  "mcpServers": {
+    "sourcecraft": {
+      "type": "streamable-http",
+      "url": "https://api.sourcecraft.tech/mcp"
+    }
+  }
+
+  "mcpServers": {
+    "context7": {
+      "type": "stdio",
+      "command": "cmd",
+      "args": ["/c", "npx", "-y", "@upstash/context7-mcp@latest"]
+    }
+  }
+}

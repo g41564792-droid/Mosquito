@@ -100,7 +100,7 @@ def fabric_kb():
         ],
         [
             InlineKeyboardButton(text="Антимошка", callback_data="fabric_Antimoska"),
-            InlineKeyboardButton(text="Антикошка", callback_data="fabric_Antikoška")
+            InlineKeyboardButton(text="Антикошка", callback_data="fabric_Antikoshka")
         ]
     ])
     return kb

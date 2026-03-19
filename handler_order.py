@@ -409,13 +409,23 @@ async def save_notes(msg: Message, state: FSMContext):
 
 @router.callback_query(F.data == "confirm_order")
 async def send_confirmation(call: CallbackQuery, state: FSMContext):
+    import asyncio
+    from datetime import datetime
     data = await state.get_data()
-    # client_name = data.get("client_name", "Клиент")  # Не используется
     
-    # Сохранение в Google Sheet
-    order_id = f"ORD-{len(str(data))}"
+    # Генерация order_id на основе временной метки
+    order_id = f"ORD-{int(datetime.now().timestamp())}"
+    
+    # Сохранение в Google Sheet через отдельный поток, чтобы не блокировать event loop
     from google_sheets import save_order_to_sheet
-    await save_order_to_sheet(order_id, data)
+    try:
+        loop = asyncio.get_event_loop()
+        await loop.run_in_executor(None, save_order_to_sheet, order_id, data)
+    except Exception as e:
+        logging.error(f"Ошибка при сохранении заказа: {e}")
+        if call.message:
+            await call.message.answer("❌ Произошла ошибка при сохранении заказа. Попробуйте позже.")
+        return
     
     if call.message:
         await call.message.answer(f"✅ Заказ #{order_id} принят.")
