@@ -1,3 +1,4 @@
+import logging
 from aiogram import Router, F
 from aiogram.filters import CommandStart
 from aiogram.fsm.context import FSMContext
@@ -104,8 +105,9 @@ async def set_sub_install(call: CallbackQuery, state: FSMContext):
     if call.message:
         try:
             await call.message.answer(f"✅ Подтип '{sub_type}' выбран.\n\nВведите ширину изделия (мм):", parse_mode=ParseMode.MARKDOWN)
-        except Exception:
+        except Exception as e:
             # Если не удалось отправить сообщение, просто продолжаем
+            print(f"Ошибка при отправке сообщения: {e}")
             pass
     await call.answer()
 
@@ -124,8 +126,9 @@ async def check_width(msg: Message, state: FSMContext):
         await state.set_state(OrderForm.size_h)
         try:
             await msg.answer("Введите высоту изделия (мм):", parse_mode=ParseMode.MARKDOWN)
-        except Exception:
+        except Exception as e:
             # Если не удалось отправить сообщение, просто продолжаем
+            logging.error(f"Ошибка при отправке сообщения: {e}")
             pass
     except ValueError:
         await msg.answer("Ошибка: вводите числа.")
@@ -139,6 +142,12 @@ async def check_height(msg: Message, state: FSMContext):
             await msg.answer("Пожалуйста, введите числовое значение для высоты.")
             return
         data = await state.get_data()
+        
+        # Проверяем наличие width в данных
+        if "size_w" not in data:
+            await msg.answer("Ошибка: ширина изделия не найдена. Начните оформление заказа заново.")
+            return
+            
         width = data["size_w"]
         
         if not (150 <= height <= 3000):
@@ -148,18 +157,21 @@ async def check_height(msg: Message, state: FSMContext):
         await state.update_data({"size_h": height})
         
         needs_impost = (width > 1200) or (height > 1200)
-        
+
         if needs_impost:
-            await msg.answer("⚠️ Размер больше 1200 мм. Хотите поставить импост?", parse_mode=ParseMode.MARKDOWN)
             from keyboards import impost_kb
-            await msg.answer("", reply_markup=impost_kb())
+            await msg.answer("⚠️ Размер больше 1200 мм. Хотите поставить импост?", reply_markup=impost_kb())
             await state.set_state(OrderForm.impost)
         else:
-            await msg.answer("Введите количество изделий (макс 30).", parse_mode=ParseMode.MARKDOWN)
+            await msg.answer("Введите количество изделий (максимум 30). При необходимости большего количества свяжитесь с менеджером.")
             await state.set_state(OrderForm.qty)
             
     except ValueError:
         await msg.answer("Ошибка: вводите числа.")
+        return
+    except Exception as e:
+        await msg.answer(f"Произошла ошибка: {str(e)}. Начните оформление заказа заново.")
+        return
 
 @router.message(OrderForm.qty)
 async def confirm_qty(msg: Message, state: FSMContext):
@@ -170,31 +182,40 @@ async def confirm_qty(msg: Message, state: FSMContext):
             await msg.answer("Пожалуйста, введите числовое значение для количества.")
             return
         if qty > 30:
-            await msg.answer("Максимум 30 единиц. Для большего количества свяжитесь с менеджером.")
+            await msg.answer("Максимум 30 изделий. Для большего количества свяжитесь с менеджером.")
             return
             
         await state.update_data({"qty": qty})
         data = await state.get_data()
-        install_type = data["install_type"]
         
+        # Проверяем наличие install_type в данных
+        if "install_type" not in data:
+            await msg.answer("Ошибка: тип установки не найден. Начните оформление заказа заново.")
+            return
+            
+        install_type = data["install_type"]
+
         from keyboards import color_kb
-        await msg.answer("Выберите цвет рамы:")
-        await msg.answer("", reply_markup=color_kb(install_type))
+        await msg.answer("Выберите цвет рамы:", reply_markup=color_kb(install_type))
         await state.set_state(OrderForm.color)
         
     except ValueError:
         await msg.answer("Введите числовое значение.")
+        return
+    except Exception as e:
+        await msg.answer(f"Произошла ошибка: {str(e)}. Начните оформление заказа заново.")
+        return
 
 @router.callback_query(F.data.startswith("color_"))
 async def select_color(call: CallbackQuery, state: FSMContext):
     from keyboards import mounting_kb
     if call.data:
-        color = call.data.split("_")[1]
+        color = call.data.split("_", 1)[1]  # Используем maxsplit=1 для корректной обработки "Иной цвет по RAL"
     else:
         color = ""
     data = await state.get_data()
     
-    if "RAL" in color:
+    if color == "Иной цвет по RAL":
         if call.message:
             await call.message.answer("Введите описание цвета (код или название):")
         await state.set_state(OrderForm.color_description)
@@ -203,19 +224,19 @@ async def select_color(call: CallbackQuery, state: FSMContext):
     else:
         await state.update_data({"color": color})
         if call.message:
-            await call.message.answer("Выберите способ крепления:")
-            await call.message.answer("", reply_markup=mounting_kb())
+            await call.message.answer("Выберите способ крепления:", reply_markup=mounting_kb())
         await state.set_state(OrderForm.mount)
 
 @router.message(OrderForm.color_description)
 async def save_ral_color(msg: Message, state: FSMContext):
     data = await state.get_data()
-    data["color"] += f" ({msg.text})"
+    # Сохраняем полное описание RAL цвета
+    ral_description = f"Иной цвет по RAL ({msg.text})"
+    data["color"] = ral_description
     await state.update_data(data)
-    
+
     from keyboards import mounting_kb
-    await msg.answer("Выберите способ крепления:")
-    await msg.answer("", reply_markup=mounting_kb())
+    await msg.answer("Выберите способ крепления:", reply_markup=mounting_kb())
     await state.set_state(OrderForm.mount)
 
 @router.callback_query(F.data.startswith("mount_"))
@@ -237,9 +258,7 @@ async def select_mounting(call: CallbackQuery, state: FSMContext):
     
     await state.update_data({"mount": mount_value})
     if call.message:
-        if call.message:
-            await call.message.answer("Выберите тип полотна:")
-            await call.message.answer("", reply_markup=fabric_kb())
+        await call.message.answer("Выберите тип полотна:", reply_markup=fabric_kb())
     await state.set_state(OrderForm.fabric)
     await call.answer()
 
@@ -252,8 +271,7 @@ async def choose_impost_no(call: CallbackQuery, state: FSMContext):
     await state.update_data({"impost": "no"})
 
     if call.message:
-        await call.message.answer("Выберите тип полотна:")
-        await call.message.answer("", reply_markup=fabric_kb())
+        await call.message.answer("Выберите тип полотна:", reply_markup=fabric_kb())
 
     await state.set_state(OrderForm.fabric)
     await call.answer()
@@ -262,7 +280,7 @@ async def choose_impost_no(call: CallbackQuery, state: FSMContext):
 async def choose_impost_yes(call: CallbackQuery, state: FSMContext):
     from keyboards import orient_impost_kb
     if call.message:
-        await call.message.answer("Как установить импост?", parse_mode=ParseMode.MARKDOWN)
+        await call.message.answer("Как установить импост?")
         await call.message.answer("", reply_markup=orient_impost_kb())
     await state.update_data({"impost": "yes"})
     await state.set_state(OrderForm.orient)
@@ -274,8 +292,7 @@ async def orient_impost(call: CallbackQuery, state: FSMContext):
     await state.update_data({"orient": orient})
     from keyboards import fabric_kb
     if call.message:
-        await call.message.answer("Выберите тип полотна:")
-        await call.message.answer("", reply_markup=fabric_kb())
+        await call.message.answer("Выберите тип полотна:", reply_markup=fabric_kb())
     await state.set_state(OrderForm.fabric)
     await call.answer()
 
@@ -295,12 +312,80 @@ async def select_fabric(call: CallbackQuery, state: FSMContext):
     await state.set_state(OrderForm.finish_date)
     await call.answer()
 
-@router.callback_query(F.data == "date_default")
+@router.callback_query(F.data.startswith("date_select_"))
 async def finish_date_select(call: CallbackQuery, state: FSMContext):
-    await state.update_data({"finish_date": "Завтра"})
-    if call.message:
-        await call.message.answer("Напишите примечание к заказу (можно оставить пустым)")
-    await state.set_state(OrderForm.notes)
+    from keyboards import date_kb
+    from datetime import datetime
+    
+    # Извлекаем выбранную дату из callback_data
+    if call.data:
+        selected_date_str = call.data.replace("date_select_", "")
+    else:
+        selected_date_str = ""
+    
+    # Проверяем формат даты и валидируем
+    try:
+        selected_date = datetime.strptime(selected_date_str, "%d.%m.%Y").date()
+        tomorrow = (datetime.now() + timedelta(days=1)).date()
+        
+        # Проверяем, что дата не раньше чем завтра
+        if selected_date < tomorrow:
+            await call.answer("Нельзя выбрать дату ранее, чем завтра!", show_alert=True)
+            return
+        
+        await state.update_data({"finish_date": selected_date_str})
+        if call.message:
+            await call.message.answer(f"📅 Желаемый срок готовности установлен: {selected_date_str}\n\nНапишите примечание к заказу (можно оставить пустым)")
+        await state.set_state(OrderForm.notes)
+    except ValueError:
+        await call.answer("Неверный формат даты!", show_alert=True)
+
+@router.callback_query(F.data.startswith("date_nav_"))
+async def navigate_calendar(call: CallbackQuery, state: FSMContext):
+    from keyboards import date_kb
+    from datetime import datetime
+    
+    # Проверяем, что callback_data существует
+    if not call.data:
+        await call.answer("Ошибка при навигации по календарю", show_alert=True)
+        return
+    
+    # Извлекаем год и месяц из callback_data
+    parts = call.data.split("_")
+    if len(parts) >= 4:  # date_nav_year_month
+        try:
+            year = int(parts[2])
+            month = int(parts[3])
+            
+            # Корректируем месяц если нужно
+            if month == 0:
+                month = 12
+                year -= 1
+            elif month == 13:
+                month = 1
+                year += 1
+            
+            # Создаем новую дату
+            new_date = datetime(year, month, 1)
+            
+            # Обновляем клавиатуру
+            try:
+                if call.message:
+                    await call.message.edit_reply_markup(reply_markup=date_kb(new_date))
+            except Exception as e:
+                # Если не можем редактировать сообщение, просто игнорируем ошибку
+                print(f"Ошибка при редактировании клавиатуры: {e}")
+                pass
+        except (ValueError, IndexError):
+            await call.answer("Ошибка при навигации по календарю", show_alert=True)
+    else:
+        await call.answer("Ошибка при навигации по календарю", show_alert=True)
+
+
+@router.callback_query(F.data == "date_ignore")
+async def ignore_date_button(call: CallbackQuery):
+    # Просто игнорируем нажатие на заголовочные кнопки
+    await call.answer()
 
 @router.message(OrderForm.notes)
 async def save_notes(msg: Message, state: FSMContext):

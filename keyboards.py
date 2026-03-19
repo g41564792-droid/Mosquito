@@ -37,22 +37,23 @@ def proemny_sub_kb():
 
 # Цвет рамы
 def color_kb(install_type):
-    colors = ["Белый", "Коричневый"]
     if install_type == "Проёмный":
-        colors.append("Антрацит")
-    
+        colors = ["Белый", "Коричневый", "Антрацит", "Иной цвет по RAL"]
+    else:  # Для дверной и роллетной
+        colors = ["Белый", "Коричневый"]
+
     rows = []
-    for i in range(0, len(colors), 2):
-        row = []
-        row.append(InlineKeyboardButton(text=colors[i], callback_data=f"color_{colors[i]}"))
-        if i + 1 < len(colors):
-            row.append(InlineKeyboardButton(text=colors[i+1], callback_data=f"color_{colors[i+1]}"))
+    row = []
+    for color in colors:
+        row.append(InlineKeyboardButton(text=color, callback_data=f"color_{color}"))
+        if len(row) == 2:  # Две кнопки в ряду
+            rows.append(row)
+            row = []
+    
+    # Добавляем оставшиеся кнопки в последний ряд
+    if row:
         rows.append(row)
-    
-    # Добавить RAL только для Проёмный
-    if install_type == "Проёмный":
-        rows.append([InlineKeyboardButton(text="RAL (свой цвет)", callback_data="color_RAL")])
-    
+
     kb = InlineKeyboardMarkup(inline_keyboard=rows)
     return kb
 
@@ -104,13 +105,61 @@ def fabric_kb():
     ])
     return kb
 
+import calendar
+
 # Дата готовности
-def date_kb():
-    next_day = (datetime.now() + timedelta(days=1)).strftime("%d.%m.%Y")
-    kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text=f"⏱ {next_day} (по умолчанию)", callback_data="date_default")]
-    ])
-    return kb
+def date_kb(selected_date=None):
+    if selected_date is None:
+        selected_date = datetime.now() + timedelta(days=1)
+    
+    # Формируем календарь на текущий месяц
+    year = selected_date.year
+    month = selected_date.month
+    
+    # Заголовок месяца
+    month_name = selected_date.strftime("%B %Y")
+    
+    # Создаем клавиатуру
+    kb = []
+    
+    # Навигационные кнопки (переключение месяцев)
+    nav_row = [
+        InlineKeyboardButton(text="<<", callback_data=f"date_nav_{year}_{month-1}"),
+        InlineKeyboardButton(text=month_name, callback_data="date_ignore"),  # Необрабатываемая кнопка
+        InlineKeyboardButton(text=">>", callback_data=f"date_nav_{year}_{month+1}")
+    ]
+    kb.append(nav_row)
+    
+    # Дни недели
+    days_header = [InlineKeyboardButton(text=day, callback_data="date_ignore") for day in ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"]]
+    kb.append(days_header)
+    
+    # Получаем первый день месяца и количество дней
+    cal = calendar.monthcalendar(year, month)
+    
+    for week in cal:
+        week_row = []
+        for day in week:
+            if day == 0:  # Пустая ячейка
+                week_row.append(InlineKeyboardButton(text=" ", callback_data="date_ignore"))
+            else:
+                date_obj = datetime(year, month, day)
+                date_str = date_obj.strftime("%d.%m.%Y")
+                
+                # Проверяем, можно ли выбрать эту дату (не раньше чем завтра)
+                tomorrow = datetime.now() + timedelta(days=1)
+                if date_obj.date() >= tomorrow.date():
+                    week_row.append(InlineKeyboardButton(text=str(day), callback_data=f"date_select_{date_str}"))
+                else:
+                    week_row.append(InlineKeyboardButton(text="•", callback_data="date_ignore"))
+        
+        kb.append(week_row)
+    
+    # Кнопка "По умолчанию" (завтра)
+    tomorrow = (datetime.now() + timedelta(days=1)).strftime("%d.%m.%Y")
+    kb.append([InlineKeyboardButton(text=f"⏱ {tomorrow} (по умолчанию)", callback_data=f"date_select_{tomorrow}")])
+    
+    return InlineKeyboardMarkup(inline_keyboard=kb)
 
 # Подтверждение заказа
 def confirm_order_kb():

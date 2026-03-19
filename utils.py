@@ -13,5 +13,5 @@ def validate_size(width, height):
 
 def validate_quantity(qty):
     if qty > 30:
-        return {"valid": False, "msg": "Максимум 30 единиц. Для большого объема свяжитесь с менеджером."}
+        return {"valid": False, "msg": "Максимум 30 изделий. Для большего количества свяжитесь с менеджером."}
     return {"valid": True}
