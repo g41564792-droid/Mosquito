@@ -164,6 +164,16 @@ def date_kb(selected_date=None):
     
     return InlineKeyboardMarkup(inline_keyboard=kb)
 
+# Действия после ввода размера
+def size_action_kb():
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [
+            InlineKeyboardButton(text="➕ Добавить еще размеры", callback_data="size_action_add"),
+            InlineKeyboardButton(text="➡️ Дальше к оформлению", callback_data="size_action_next")
+        ]
+    ])
+    return kb
+
 # Подтверждение заказа
 def confirm_order_kb():
     kb = InlineKeyboardMarkup(inline_keyboard=[

@@ -31,32 +31,49 @@ def save_order_to_sheet(order_id, data):
     """
     sheet = get_spreadsheet()
     
-    # Формируем значения для нового листа (OrderLog) или конкретного диапазона
-    values = [
-        [
-            order_id,                          # A: ID заказа
-            data.get('install_type'),          # B: Тип установки
-            data.get('sub_install', ''),       # C: Подтип
-            f"{data['size_w']}x{data['size_h']}", # D: Размер
-            data.get('qty', 1),                # E: Количество
-            data.get('color', 'Не выбран'),    # F: Цвет
-            data.get('fabric', 'Стандартное'), # G: Полотно
-            data.get('impost', 'no'),          # H: Импост
-            data.get('notes', ''),             # I: Примечание
-            "Новый заказ",                     # J: Статус
-            data.get('client_name', '')        # K: Клиент
+    # Получаем список размеров, если есть, иначе используем старые поля
+    sizes = data.get('sizes')
+    if not sizes:
+        # Обратная совместимость: создаем один размер из старых полей
+        size_w = data.get('size_w')
+        size_h = data.get('size_h')
+        qty = data.get('qty', 1)
+        if size_w is not None and size_h is not None:
+            sizes = [{"width": size_w, "height": size_h, "qty": qty}]
+        else:
+            sizes = []
+    
+    if not sizes:
+        raise ValueError("Нет данных о размерах для сохранения.")
+    
+    # Подготавливаем строки для каждого размера
+    rows = []
+    for size in sizes:
+        row = [
+            order_id,                                  # A: ID заказа
+            data.get('install_type'),                  # B: Тип установки
+            data.get('sub_install', ''),               # C: Подтип
+            f"{size['width']}x{size['height']}",      # D: Размер
+            size.get('qty', 1),                        # E: Количество
+            data.get('color', 'Не выбран'),            # F: Цвет
+            data.get('fabric', 'Стандартное'),         # G: Полотно
+            data.get('impost', 'no'),                  # H: Импост
+            data.get('notes', ''),                     # I: Примечание
+            "Новый заказ",                             # J: Статус
+            data.get('client_name', '')                # K: Клиент
         ]
-    ]
+        rows.append(row)
     
     try:
         result = sheet.values().append(
             spreadsheetId=GOOGLE_TABLES_ID,
-            range='Zakaz',                      # Или другой лист, например 'Заказы'
+            range='Zakaz!A:K',                      # Диапазон столбцов A-K
             valueInputOption='RAW',
-            body={'values': values}
+            insertDataOption='INSERT_ROWS',
+            body={'values': rows}
         ).execute()
         
-        print(f"Заказ #{order_id} успешно сохранен.")
+        print(f"Заказ #{order_id} успешно сохранен. Добавлено {len(rows)} строк.")
         return result
     
     except Exception as e:

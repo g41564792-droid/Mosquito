@@ -158,38 +158,115 @@ async def process_size_all(msg: Message, state: FSMContext):
             await msg.answer("Количество должно быть положительным.")
             return
         
-        # Сохраняем данные
+        # Получаем текущий список размеров
+        data = await state.get_data()
+        sizes = data.get("sizes", [])
+        # Добавляем новый размер
+        sizes.append({"width": width, "height": height, "qty": qty})
+        # Сохраняем обновленный список и также отдельные поля для обратной совместимости
         await state.update_data({
+            "sizes": sizes,
             "size_w": width,
             "size_h": height,
             "qty": qty
         })
         
-        # Отладочное сообщение
-        await msg.answer(f"✅ Данные сохранены: ширина {width} мм, высота {height} мм, количество {qty}.")
-        
-        # Проверка на импост
+        # Проверяем, нужен ли импост для этого размера
         needs_impost = (width > 1200) or (height > 1200)
         if needs_impost:
             from keyboards import impost_kb
             await msg.answer("⚠️ Размер больше 1200 мм. Хотите поставить импост?", reply_markup=impost_kb())
             await state.set_state(OrderForm.impost)
         else:
-            # Переходим к выбору цвета
-            data = await state.get_data()
-            install_type = data.get("install_type")
-            if not install_type:
-                await msg.answer("Ошибка: тип установки не найден. Начните оформление заказа заново.")
-                return
-            from keyboards import color_kb
-            await msg.answer("Выберите цвет рамы:", reply_markup=color_kb(install_type))
-            await state.set_state(OrderForm.color)
+            # Сообщение с кнопками
+            from keyboards import size_action_kb
+            await msg.answer(
+                f"✅ Данные сохранены: ширина {width} мм, высота {height} мм, количество {qty}.\n"
+                f"Всего размеров: {len(sizes)}.",
+                reply_markup=size_action_kb()
+            )
             
     except ValueError:
         await msg.answer("Ошибка: вводите числа.")
     except Exception as e:
         logging.error(f"Ошибка в process_size_all: {e}", exc_info=True)
         await msg.answer("Произошла ошибка. Начните оформление заказа заново.")
+
+@router.callback_query(F.data == "size_action_add")
+async def add_more_sizes(call: CallbackQuery, state: FSMContext):
+    """Обработчик кнопки 'Добавить еще размеры'"""
+    if call.message:
+        await call.message.answer(
+            "📏 Введите следующие размеры: ширина высота [кол-во]\n"
+            "Например: 800 1200 2\n"
+            "*Минимум 150 мм, максимум 3000 мм. Количество по умолчанию 1, максимум 30.*",
+            parse_mode=ParseMode.MARKDOWN
+        )
+    await state.set_state(OrderForm.size_all)
+    await call.answer()
+
+@router.callback_query(F.data == "size_action_next")
+async def proceed_to_next(call: CallbackQuery, state: FSMContext):
+    """Обработчик кнопки 'Дальше к оформлению'"""
+    data = await state.get_data()
+    sizes = data.get("sizes", [])
+    if not sizes:
+        if call.message:
+            await call.message.answer("Ошибка: нет сохраненных размеров. Введите размеры.")
+            await state.set_state(OrderForm.size_all)
+        await call.answer()
+        return
+    
+    # Если импост уже задан, переходим к следующему шагу в зависимости от его значения
+    impost = data.get("impost")
+    if impost is not None:
+        if impost == "yes" and not data.get("orient"):
+            # Нужно выбрать ориентацию импоста
+            from keyboards import orient_impost_kb
+            if call.message:
+                await call.message.answer("Как установить импост?", reply_markup=orient_impost_kb())
+            await state.set_state(OrderForm.orient)
+        else:
+            # Импост не нужен или уже выбран, переходим к выбору цвета
+            install_type = data.get("install_type")
+            if not install_type:
+                if call.message:
+                    await call.message.answer("Ошибка: тип установки не найден. Начните оформление заказа заново.")
+                await state.clear()
+                await call.answer()
+                return
+            from keyboards import color_kb
+            if call.message:
+                await call.message.answer("Выберите цвет рамы:", reply_markup=color_kb(install_type))
+            await state.set_state(OrderForm.color)
+    else:
+        # Импост еще не задан, проверяем, нужен ли он
+        needs_impost = False
+        for size in sizes:
+            if size["width"] > 1200 or size["height"] > 1200:
+                needs_impost = True
+                break
+        
+        if needs_impost:
+            from keyboards import impost_kb
+            if call.message:
+                await call.message.answer("⚠️ Один из размеров больше 1200 мм. Хотите поставить импост?", reply_markup=impost_kb())
+            await state.set_state(OrderForm.impost)
+        else:
+            # Переходим к выбору цвета
+            install_type = data.get("install_type")
+            if not install_type:
+                if call.message:
+                    await call.message.answer("Ошибка: тип установки не найден. Начните оформление заказа заново.")
+                await state.clear()
+                await call.answer()
+                return
+            from keyboards import color_kb
+            if call.message:
+                await call.message.answer("Выберите цвет рамы:", reply_markup=color_kb(install_type))
+            await state.set_state(OrderForm.color)
+    
+    await call.answer()
 
 
 @router.callback_query(F.data.startswith("color_"))
@@ -250,36 +327,61 @@ async def select_mounting(call: CallbackQuery, state: FSMContext):
 
 @router.callback_query(F.data == "impost_No")
 async def choose_impost_no(call: CallbackQuery, state: FSMContext):
-    from keyboards import fabric_kb
-
-    if call.message:
-        await call.message.answer("Без импоста. Переходим к следующим настройкам.")
     await state.update_data({"impost": "no"})
-
     if call.message:
-        await call.message.answer("Выберите тип полотна:", reply_markup=fabric_kb())
-
-    await state.set_state(OrderForm.fabric)
+        await call.message.answer("✅ Импост не требуется.")
+        # Показываем кнопки для добавления размеров или продолжения
+        from keyboards import size_action_kb
+        data = await state.get_data()
+        sizes = data.get("sizes", [])
+        await call.message.answer(
+            f"Всего размеров: {len(sizes)}.",
+            reply_markup=size_action_kb()
+        )
+    await state.set_state(OrderForm.size_all)
     await call.answer()
 
 @router.callback_query(F.data == "impost_Yes")
 async def choose_impost_yes(call: CallbackQuery, state: FSMContext):
     from keyboards import orient_impost_kb
-    if call.message:
-        await call.message.answer("Как установить импост?")
-        await call.message.answer("", reply_markup=orient_impost_kb())
-    await state.update_data({"impost": "yes"})
-    await state.set_state(OrderForm.orient)
+    logging.debug("impost_Yes triggered")
+    try:
+        kb = orient_impost_kb()
+        logging.debug(f"Keyboard created: {kb}")
+        if call.message:
+            await call.message.answer("Как установить импост?", reply_markup=kb)
+        else:
+            logging.warning("call.message is None")
+        await state.update_data({"impost": "yes"})
+        await state.set_state(OrderForm.orient)
+    except Exception as e:
+        logging.error(f"Error in impost_Yes: {e}", exc_info=True)
+        if call.message:
+            await call.message.answer("Произошла ошибка. Пожалуйста, попробуйте ещё раз.")
     await call.answer()
 
 @router.callback_query(F.data.startswith("orient_"))
 async def orient_impost(call: CallbackQuery, state: FSMContext):
+    logging.debug(f"orient_impost triggered with {call.data}")
     orient = "Вертикально" if call.data == "orient_Vertical" else "Горизонтально"
     await state.update_data({"orient": orient})
-    from keyboards import fabric_kb
+    # Показываем кнопки для добавления размеров или продолжения
+    from keyboards import size_action_kb
+    data = await state.get_data()
+    sizes = data.get("sizes", [])
     if call.message:
-        await call.message.answer("Выберите тип полотна:", reply_markup=fabric_kb())
-    await state.set_state(OrderForm.fabric)
+        try:
+            await call.message.answer(f"✅ Импост установлен ({orient}).")
+            kb = size_action_kb()
+            await call.message.answer(
+                f"Всего размеров: {len(sizes)}.",
+                reply_markup=kb
+            )
+        except Exception as e:
+            logging.error(f"Error sending messages in orient_impost: {e}", exc_info=True)
+    else:
+        logging.warning("call.message is None in orient_impost")
+    await state.set_state(OrderForm.size_all)
     await call.answer()
 
 @router.callback_query(F.data.startswith("fabric_"))
@@ -418,9 +520,7 @@ async def save_notes(msg: Message, state: FSMContext):
 
         # Безопасное извлечение данных с значениями по умолчанию
         install_type = data.get("install_type", "не указан")
-        size_w = data.get("size_w", "?")
-        size_h = data.get("size_h", "?")
-        qty = data.get("qty", "?")
+        sizes = data.get("sizes", [])
         color = data.get("color", "не выбран")
         impost = data.get("impost", "нет")
         fabric = data.get("fabric", "не выбран")
@@ -434,13 +534,26 @@ async def save_notes(msg: Message, state: FSMContext):
         elif impost == "no":
             impost_str = "нет"
 
+        # Формируем строку размеров
+        if sizes:
+            size_lines = []
+            total_qty = 0
+            for idx, size in enumerate(sizes, 1):
+                size_lines.append(f"{idx}. {size['width']}x{size['height']} мм — {size['qty']} шт.")
+                total_qty += size['qty']
+            sizes_text = "\n".join(size_lines)
+            total_qty_text = f"Всего изделий: {total_qty}"
+        else:
+            sizes_text = "Нет размеров"
+            total_qty_text = ""
+
         total_price = 0 # Здесь вызывайте функцию расчета цены
 
         price_msg = (f"📋 **Смета заказа**:\n\n"
                      f"Тип: {install_type}\n"
                      f"Подтип: {sub_install if sub_install else 'не применимо'}\n"
-                     f"Размер: {size_w}x{size_h} мм\n"
-                     f"Количество: {qty}\n"
+                     f"Размеры:\n{sizes_text}\n"
+                     f"{total_qty_text}\n"
                      f"Цвет: {color}\n"
                      f"Импост: {impost_str}\n"
                      f"Полотно: {fabric}\n\n"
