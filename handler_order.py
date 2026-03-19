@@ -307,8 +307,16 @@ async def select_fabric(call: CallbackQuery, state: FSMContext):
     
     next_day = (datetime.now() + timedelta(days=1)).strftime("%d.%m.%Y")
     if call.message:
-        await call.message.answer(f"Желаемый срок готовности:\n*Дата {next_day}*", parse_mode=ParseMode.MARKDOWN)
-        await call.message.answer("", reply_markup=date_kb())
+        await call.message.answer(
+            f"📅 *Желаемый срок готовности*\n\n"
+            f"По умолчанию: *{next_day}* (завтра).\n"
+            f"Вы можете:\n"
+            f"• Выбрать дату из календаря ниже\n"
+            f"• Нажать кнопку '📝 Ввести дату вручную' и отправить дату в формате *ДД.ММ.ГГГГ*\n"
+            f"• Выбрать дату позже завтрашнего дня",
+            reply_markup=date_kb(),
+            parse_mode=ParseMode.MARKDOWN
+        )
     await state.set_state(OrderForm.finish_date)
     await call.answer()
 
@@ -387,25 +395,77 @@ async def ignore_date_button(call: CallbackQuery):
     # Просто игнорируем нажатие на заголовочные кнопки
     await call.answer()
 
+@router.callback_query(F.data == "date_manual")
+async def manual_date_input(call: CallbackQuery, state: FSMContext):
+    if call.message:
+        await call.message.answer(
+            "📝 Введите дату вручную в формате *ДД.ММ.ГГГГ* (например, 25.12.2024).\n"
+            "Дата должна быть не раньше завтрашнего дня.",
+            parse_mode=ParseMode.MARKDOWN
+        )
+    await call.answer()
+
+@router.message(OrderForm.finish_date)
+async def process_finish_date_text(msg: Message, state: FSMContext):
+    from datetime import datetime
+    date_text = msg.text.strip()
+    try:
+        selected_date = datetime.strptime(date_text, "%d.%m.%Y").date()
+        tomorrow = (datetime.now() + timedelta(days=1)).date()
+        if selected_date < tomorrow:
+            await msg.answer("❌ Нельзя выбрать дату ранее, чем завтра! Пожалуйста, введите корректную дату.")
+            return
+        await state.update_data({"finish_date": date_text})
+        await msg.answer(f"📅 Желаемый срок готовности установлен: {date_text}\n\nНапишите примечание к заказу (можно оставить пустым)")
+        await state.set_state(OrderForm.notes)
+    except ValueError:
+        await msg.answer("❌ Неверный формат даты! Введите дату в формате ДД.ММ.ГГГГ (например, 25.12.2024).")
+
 @router.message(OrderForm.notes)
 async def save_notes(msg: Message, state: FSMContext):
     from keyboards import confirm_order_kb
-    data = await state.get_data()
-    data["notes"] = msg.text
+    try:
+        # Сохраняем примечание в состоянии
+        await state.update_data({"notes": msg.text})
+        # Получаем актуальные данные
+        data = await state.get_data()
 
-    total_price = 0 # Здесь вызывайте функцию расчета цены
+        # Безопасное извлечение данных с значениями по умолчанию
+        install_type = data.get("install_type", "не указан")
+        size_w = data.get("size_w", "?")
+        size_h = data.get("size_h", "?")
+        qty = data.get("qty", "?")
+        color = data.get("color", "не выбран")
+        impost = data.get("impost", "нет")
+        fabric = data.get("fabric", "не выбран")
+        orient = data.get("orient", "")
+        sub_install = data.get("sub_install", "")
 
-    price_msg = (f"📋 **Смета заказа**:\n\n"
-                 f"Тип: {data['install_type']}\n"
-                 f"Размер: {data['size_w']}x{data['size_h']} мм\n"
-                 f"Количество: {data['qty']}\n"
-                 f"Цвет: {data['color']}\n"
-                 f"Импост: {data['impost']}\n"
-                 f"Полотно: {data['fabric']}\n\n"
-                 f"💰 **Цена: {total_price} руб.**\n\nПодтвердить заказ?")
+        # Формируем строку импоста с ориентацией если есть
+        impost_str = impost
+        if impost == "yes" and orient:
+            impost_str = f"да ({orient})"
+        elif impost == "no":
+            impost_str = "нет"
 
-    await msg.answer(price_msg, reply_markup=confirm_order_kb(), parse_mode=ParseMode.MARKDOWN)
-    await state.set_state(OrderForm.summary)
+        total_price = 0 # Здесь вызывайте функцию расчета цены
+
+        price_msg = (f"📋 **Смета заказа**:\n\n"
+                     f"Тип: {install_type}\n"
+                     f"Подтип: {sub_install if sub_install else 'не применимо'}\n"
+                     f"Размер: {size_w}x{size_h} мм\n"
+                     f"Количество: {qty}\n"
+                     f"Цвет: {color}\n"
+                     f"Импост: {impost_str}\n"
+                     f"Полотно: {fabric}\n\n"
+                     f"💰 **Цена: {total_price} руб.**\n\nПодтвердить заказ?")
+
+        await msg.answer(price_msg, reply_markup=confirm_order_kb(), parse_mode=ParseMode.MARKDOWN)
+        await state.set_state(OrderForm.summary)
+    except Exception as e:
+        logging.error(f"Ошибка в save_notes: {e}", exc_info=True)
+        await msg.answer("Произошла ошибка при формировании сводки. Пожалуйста, начните заказ заново.")
+        await state.clear()
 
 @router.callback_query(F.data == "confirm_order")
 async def send_confirmation(call: CallbackQuery, state: FSMContext):
@@ -419,8 +479,7 @@ async def send_confirmation(call: CallbackQuery, state: FSMContext):
     # Сохранение в Google Sheet через отдельный поток, чтобы не блокировать event loop
     from google_sheets import save_order_to_sheet
     try:
-        loop = asyncio.get_event_loop()
-        await loop.run_in_executor(None, save_order_to_sheet, order_id, data)
+        await asyncio.to_thread(save_order_to_sheet, order_id, data)
     except Exception as e:
         logging.error(f"Ошибка при сохранении заказа: {e}")
         if call.message:

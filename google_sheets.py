@@ -3,7 +3,6 @@ from google.oauth2 import service_account
 from googleapiclient.discovery import build
 from config import GOOGLE_SERVICE_ACCOUNT_KEY_PATH, GOOGLE_TABLES_ID, GOOGLE_SCOPES
 
-SCOPES = ['https://www.googleapis.com/auth/spreadsheets']
 
 def get_spreadsheet():
     if not os.path.exists(GOOGLE_SERVICE_ACCOUNT_KEY_PATH):
@@ -11,7 +10,7 @@ def get_spreadsheet():
 
     try:
         credentials = service_account.Credentials.from_service_account_file(
-            GOOGLE_SERVICE_ACCOUNT_KEY_PATH, scopes=SCOPES
+            GOOGLE_SERVICE_ACCOUNT_KEY_PATH, scopes=GOOGLE_SCOPES
         )
         
         # Проверка токена, если истек, он перезапишется автоматически при следующем запросе

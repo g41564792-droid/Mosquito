@@ -159,6 +159,9 @@ def date_kb(selected_date=None):
     tomorrow = (datetime.now() + timedelta(days=1)).strftime("%d.%m.%Y")
     kb.append([InlineKeyboardButton(text=f"⏱ {tomorrow} (по умолчанию)", callback_data=f"date_select_{tomorrow}")])
     
+    # Кнопка ручного ввода
+    kb.append([InlineKeyboardButton(text="📝 Ввести дату вручную", callback_data="date_manual")])
+    
     return InlineKeyboardMarkup(inline_keyboard=kb)
 
 # Подтверждение заказа
