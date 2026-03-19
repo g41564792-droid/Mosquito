@@ -178,7 +178,6 @@ async def process_size_all(msg: Message, state: FSMContext):
             # Переходим к выбору цвета
             data = await state.get_data()
             install_type = data.get("install_type")
-            await msg.answer(f"🔍 Отладка: install_type = {install_type}")
             if not install_type:
                 await msg.answer("Ошибка: тип установки не найден. Начните оформление заказа заново.")
                 return
@@ -459,12 +458,6 @@ async def send_confirmation(call: CallbackQuery, state: FSMContext):
     import asyncio
     from datetime import datetime
     data = await state.get_data()
-    
-    # Отладочная информация о данных
-    debug_info = f"Ключи данных: {list(data.keys())}\n"
-    debug_info += f"size_w: {data.get('size_w')}, size_h: {data.get('size_h')}, qty: {data.get('qty')}"
-    if call.message:
-        await call.message.answer(f"🔍 Отладка сохранения: {debug_info}")
     
     # Генерация order_id на основе временной метки
     order_id = f"ORD-{int(datetime.now().timestamp())}"
