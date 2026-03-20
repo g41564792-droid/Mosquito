@@ -273,14 +273,14 @@ async def proceed_to_next(call: CallbackQuery, state: FSMContext):
 async def select_color(call: CallbackQuery, state: FSMContext):
     from keyboards import mounting_kb
     if call.data:
-        color = call.data.split("_", 1)[1]  # Используем maxsplit=1 для корректной обработки "Иной цвет по RAL"
+        color = call.data.split("_", 1)[1]  # Используем maxsplit=1 для корректной обработки "Цвет по RAL"
     else:
         color = ""
     data = await state.get_data()
     
-    if color == "Иной цвет по RAL":
+    if color == "Цвет по RAL":
         if call.message:
-            await call.message.answer("Введите описание цвета (код или название):")
+            await call.message.answer("Введите 4 цифры цвета по каталогу RAL (например, 9016):")
         await state.set_state(OrderForm.color_description)
         data["color"] = color
         await state.update_data(data)
@@ -294,7 +294,7 @@ async def select_color(call: CallbackQuery, state: FSMContext):
 async def save_ral_color(msg: Message, state: FSMContext):
     data = await state.get_data()
     # Сохраняем полное описание RAL цвета
-    ral_description = f"Иной цвет по RAL ({msg.text})"
+    ral_description = f"Цвет по RAL ({msg.text})"
     data["color"] = ral_description
     await state.update_data(data)
 
@@ -386,10 +386,19 @@ async def orient_impost(call: CallbackQuery, state: FSMContext):
 
 @router.callback_query(F.data.startswith("fabric_"))
 async def select_fabric(call: CallbackQuery, state: FSMContext):
+    fabric_map = {
+        "Standard": "Стандартное",
+        "Antipyl": "Антипыль",
+        "Antimoska": "Антимошка",
+        "Antikoshka": "Антикошка"
+    }
+    
     if call.data:
-        fabric = call.data.split("_")[1]
+        fabric_key = call.data.split("_")[1]
+        fabric = fabric_map.get(fabric_key, fabric_key)
     else:
         fabric = ""
+    
     await state.update_data({"fabric": fabric})
     from keyboards import date_kb
     

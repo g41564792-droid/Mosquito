@@ -38,7 +38,7 @@ def proemny_sub_kb():
 # Цвет рамы
 def color_kb(install_type):
     if install_type == "Проёмный":
-        colors = ["Белый", "Коричневый", "Антрацит", "Иной цвет по RAL"]
+        colors = ["Белый", "Коричневый", "Антрацит", "Цвет по RAL"]
     else:  # Для дверной и роллетной
         colors = ["Белый", "Коричневый"]
 
@@ -66,7 +66,7 @@ def mounting_kb():
         ],
         [
             InlineKeyboardButton(text="Пластик зацепы", callback_data="mount_Plastic"),
-            InlineKeyboardButton(text="По умолчанию", callback_data="mount_Default")
+            InlineKeyboardButton(text="см. Примечание", callback_data="mount_Default")
         ]
     ])
     return kb

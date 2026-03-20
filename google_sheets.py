@@ -72,6 +72,18 @@ def save_order_to_sheet(order_id, data):
                 return val.strip()
             return str(val).strip()
         
+        # Определение значения импоста
+        impost_raw = data.get('impost', 'no')
+        orient_raw = data.get('orient', '')
+        if impost_raw == 'yes':
+            if orient_raw:
+                # Приводим к нижнему регистру
+                impost_value = orient_raw.lower()
+            else:
+                impost_value = 'да'
+        else:
+            impost_value = 'нет'
+        
         row = [
             order_id,                                  # A: ID заказа
             current_date,                              # B: Дата заказа
@@ -81,7 +93,7 @@ def save_order_to_sheet(order_id, data):
             size['width'],                             # F: Ширина
             size['height'],                            # G: Высота
             size.get('qty', 1),                        # H: Кол-во
-            clean(data.get('impost', 'no')),           # I: Импост
+            impost_value,                              # I: Импост
             clean(data.get('color', 'Не выбран')),     # J: Цвет
             clean(data.get('mount')),                  # K: Крепление
             clean(data.get('fabric', 'Стандартное')),  # L: Полотно
