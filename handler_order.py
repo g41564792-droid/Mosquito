@@ -406,11 +406,7 @@ async def select_fabric(call: CallbackQuery, state: FSMContext):
     if call.message:
         await call.message.answer(
             f"📅 *Желаемый срок готовности*\n\n"
-            f"По умолчанию: *{next_day}* (завтра).\n"
-            f"Вы можете:\n"
-            f"• Выбрать дату из календаря ниже\n"
-            f"• Нажать кнопку '📝 Ввести дату вручную' и отправить дату в формате *ДД.ММ.ГГГГ*\n"
-            f"• Выбрать дату позже завтрашнего дня",
+            f"введите дату:⬇️",
             reply_markup=date_kb(),
             parse_mode=ParseMode.MARKDOWN
         )
@@ -440,7 +436,7 @@ async def finish_date_select(call: CallbackQuery, state: FSMContext):
         
         await state.update_data({"finish_date": selected_date_str})
         if call.message:
-            await call.message.answer(f"📅 Желаемый срок готовности установлен: {selected_date_str}\n\nНапишите примечание к заказу (можно оставить пустым)")
+            await call.message.answer(f"📅 Желаемый срок готовности установлен: {selected_date_str}\n\nНапишите примечание к заказу")
         await state.set_state(OrderForm.notes)
     except ValueError:
         await call.answer("Неверный формат даты!", show_alert=True)
@@ -496,7 +492,7 @@ async def ignore_date_button(call: CallbackQuery):
 async def manual_date_input(call: CallbackQuery, state: FSMContext):
     if call.message:
         await call.message.answer(
-            "📝 Введите дату вручную в формате *ДД.ММ.ГГГГ* (например, 25.12.2024).\n"
+            "📝 Введите дату вручную в формате *ДД.ММ.ГГГГ* (например, 25.03.2026).\n"
             "Дата должна быть не раньше завтрашнего дня.",
             parse_mode=ParseMode.MARKDOWN
         )
@@ -513,10 +509,10 @@ async def process_finish_date_text(msg: Message, state: FSMContext):
             await msg.answer("❌ Нельзя выбрать дату ранее, чем завтра! Пожалуйста, введите корректную дату.")
             return
         await state.update_data({"finish_date": date_text})
-        await msg.answer(f"📅 Желаемый срок готовности установлен: {date_text}\n\nНапишите примечание к заказу (можно оставить пустым)")
+        await msg.answer(f"📅 Желаемый срок готовности установлен: {date_text}\n\nНапишите примечание к заказу")
         await state.set_state(OrderForm.notes)
     except ValueError:
-        await msg.answer("❌ Неверный формат даты! Введите дату в формате ДД.ММ.ГГГГ (например, 25.12.2024).")
+        await msg.answer("❌ Неверный формат даты! Введите дату в формате ДД.ММ.ГГГГ (например, 25.03.2026).")
 
 @router.message(OrderForm.notes)
 async def save_notes(msg: Message, state: FSMContext):
